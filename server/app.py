@@ -33,7 +33,13 @@ from server.db.store import TemplateStore, LeadStore
 from server.pipeline import Pipeline
 from server.makeup_config import get_config, update_config
 
-pipeline = Pipeline()
+_pipeline = None
+
+def get_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        _pipeline = Pipeline()
+    return _pipeline
 
 # ── 项目路径 ──
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -126,7 +132,7 @@ def create_app() -> Flask:
         except Exception:
             return jsonify({"error": {"code": "INVALID_IMAGE", "message": "无法解析图片，请上传 JPG/PNG 格式"}}), 400
 
-        enhanced = pipeline.enhance(img)
+        enhanced = get_pipeline().enhance(img)
         filename = f"enhanced_{uuid.uuid4().hex[:12]}.png"
         enhanced.save(str(UPLOAD_DIR / filename), format="PNG")
 
@@ -144,7 +150,7 @@ def create_app() -> Flask:
 
         ref_url = data.get("ref_image_url", "") or None
 
-        result = pipeline.generate(prompt, image_url=ref_url)
+        result = get_pipeline().generate(prompt, image_url=ref_url)
         if not result.success:
             return jsonify({"error": {"code": result.error_code, "message": result.error_message}}), 502
 
@@ -161,7 +167,7 @@ def create_app() -> Flask:
         if not image_url:
             return jsonify({"error": {"code": "NO_URL", "message": "请提供待精修的图片 URL"}}), 400
 
-        result = pipeline.refine(image_url)
+        result = get_pipeline().refine(image_url)
         if not result.success:
             return jsonify({"error": {"code": result.error_code, "message": result.error_message}}), 502
 
@@ -207,7 +213,7 @@ def create_app() -> Flask:
         except Exception:
             return jsonify({"error": {"code": "INVALID_IMAGE", "message": "无法解析图片"}}), 400
 
-        result = pipeline.run(img, intensity=intensity, extra=extra,
+        result = get_pipeline().run(img, intensity=intensity, extra=extra,
                               ref_image_url=ref_url, do_refine=do_refine, size=size, n=n)
         if not result.success:
             return jsonify({
