@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>M0 V1+V2 · 试妆验证</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:sans-serif;padding:14px;max-width:1050px;margin:auto;background:#fafafa;scroll-behavior:smooth}
+h1{font-size:18px;margin-bottom:10px}
+.section{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:10px}
+.section h2{font-size:15px;margin-bottom:8px;border-bottom:1px solid #eee;padding-bottom:6px}
+.status{padding:6px 10px;border-radius:4px;margin-bottom:6px;font-size:13px}
+.pending{background:#f5f5f5;color:#999}.running{background:#fff8e1;color:#8d6e00}
+.pass{background:#e8f5e9;color:#2e7d32}.fail{background:#ffebee;color:#c62828}
+.warn{background:#fff3e0;color:#e65100}
+canvas{border:1px solid #ddd;border-radius:4px;max-width:100%}
+button{cursor:pointer;font-size:13px;border-radius:4px;border:1px solid #ddd;background:#fff}
+button:hover{background:#f5f5f5}button:disabled{opacity:.35;cursor:not-allowed}
+#log{background:#263238;color:#aed581;padding:10px;border-radius:4px;font-family:monospace;font-size:11px;max-height:100px;overflow-y:auto;white-space:pre-wrap}
+.color-cat{margin-bottom:8px}
+.color-cat-title{font-size:12px;font-weight:bold;color:#666;margin-bottom:3px;cursor:pointer}
+.color-cat-title:hover{color:#333}
+.color-dots{display:flex;gap:4px;flex-wrap:wrap}
+.color-dot{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:.12s}
+.color-dot:hover{transform:scale(1.2)}
+.color-dot.sel{border-color:#333;box-shadow:0 0 0 2px #fff,0 0 0 4px #333}
+.makeup-cats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+@media(max-width:700px){.makeup-cats{grid-template-columns:1fr}}
+.cat-panel{border:1px solid #e0e0e0;border-radius:6px;padding:8px;transition:box-shadow .3s}
+.cat-panel.flash{box-shadow:0 0 0 3px #333;border-color:#333}
+.cat-panel h3{font-size:13px;margin-bottom:4px}
+.region-row{display:flex;align-items:center;gap:4px;margin:3px 0;font-size:12px}
+.region-row .name{width:52px;text-align:right;color:#555}
+.region-row .swatch{width:18px;height:18px;border-radius:50%;border:1px solid #ccc;flex-shrink:0;cursor:pointer}
+.region-row .swatch.off{background:#f0f0f0!important}
+.region-row .swatch:hover{transform:scale(1.2)}
+.region-row input[type=range]{flex:1;min-width:35px;height:3px}
+.region-row .alpha-val{font-size:10px;color:#999;width:26px}
+.finish-sel{font-size:10px;padding:1px 2px;border:1px solid #ddd;border-radius:3px;background:#fff;width:48px}
+.toolbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.toolbar button{padding:8px 16px;font-weight:bold}
+.btn-p{background:#333;color:#fff;border-color:#333}
+.btn-o{border:2px solid #333;color:#333}
+.master-ctrl{display:flex;align-items:center;gap:6px;font-size:13px;background:#f9f9f9;padding:6px 10px;border-radius:6px}
+.master-ctrl input{width:120px}
+</style>
+</head>
+<body>
+<h1>🪞 M0 · 淡妆优先·30区自然羽化</h1>
+<div class="section">
+<h2>V1 · 检测 + 质量提示</h2>
+<div id="v1-load" class="status pending">⏳ 加载模型中...</div>
+<div id="v1-detect" class="status pending">⏳ 等待上传照片</div>
+<div id="face-quality" style="display:none;font-size:12px;margin-bottom:4px"></div>
+<div style="font-size:12px;color:#999;margin-bottom:4px">加载 <span id="load-ms">-</span>ms &nbsp; 检测 <span id="det-ms">-</span>ms &nbsp; <span id="lm-info"></span></div>
+<input type="file" id="upload" accept="image/*" style="font-size:13px">
+<button id="detect-btn" disabled>🔍 检测人脸</button>
+<canvas id="v1-canvas" width="600" height="400" style="margin-top:6px"></canvas>
+</div>
+<div class="section">
+<h2>V2 · 清透淡妆——全局浓度控制</h2>
+<div id="v2-status" class="status pending">⏳ 等待人脸检测...</div>
+<div class="toolbar" style="margin-bottom:6px">
+<div class="master-ctrl"><strong>🎚️ 整体浓度</strong><input type="range" id="master-intensity" min="10" max="150" value="50" disabled><span id="master-val">50%</span></div>
+<button class="btn-o" id="preset-sheer">🌸 清透裸妆</button>
+<button class="btn-o" id="preset-daily">💼 日常通勤</button>
+</div>
+<div id="color-palette"></div>
+<div class="makeup-cats" id="makeup-palette"></div>
+<div class="toolbar">
+<button class="btn-p" id="apply-all" disabled>✨ 淡妆全妆</button>
+<button class="btn-o" id="clear-all" disabled>🔄 清除</button>
+<button class="btn-o" id="toggle-cmp" disabled>↔ 前后对比</button>
+</div>
+<div style="margin-top:8px"><canvas id="v2-canvas" width="600" height="400"></canvas></div>
+</div>
+<div class="section"><h2>📋 日志</h2><div id="log"></div></div>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+var $=function(s){return document.querySelector(s)},$$=function(s){return document.querySelectorAll(s)};
+var logEl=$('#log');
+function log(m){var t=new Date().toLocaleTimeString();logEl.innerHTML+='['+t+'] '+m+'\n';logEl.scrollTop=logEl.scrollHeight}
+
+var COLOR_CATS=[
+{id:'foundation',icon:'💆',name:'底妆',colors:[{hex:'#f5e6d3',n:'象牙'},{hex:'#fbe9d2',n:'亮肤'},{hex:'#f0dcc8',n:'自然'},{hex:'#e8c8a8',n:'暖肤'},{hex:'#fce4c8',n:'奶油'},{hex:'#f3d5b8',n:'蜜桃'},{hex:'#ebccaa',n:'小麦'}]},
+{id:'brow',icon:'🖊️',name:'眉毛',colors:[{hex:'#3c2820',n:'黑棕'},{hex:'#4a3528',n:'深咖'},{hex:'#5c3a2e',n:'深棕'},{hex:'#6b4834',n:'暖棕'},{hex:'#7a5c4a',n:'浅棕'},{hex:'#8b7160',n:'灰棕'}]},
+{id:'eyeshadow',icon:'🎨',name:'眼影',colors:[{hex:'#f4a8b0',n:'樱花粉'},{hex:'#e89078',n:'蜜桃橘'},{hex:'#d4a574',n:'香槟金'},{hex:'#c49a7c',n:'裸杏'},{hex:'#9b6b4a',n:'暖棕'},{hex:'#6b3a2e',n:'深咖'},{hex:'#a0526b',n:'干枯玫瑰'},{hex:'#4a4a5a',n:'烟灰'}]},
+{id:'eyeliner',icon:'✏️',name:'眼线',colors:[{hex:'#1a1a1a',n:'浓黑'},{hex:'#3c2820',n:'深棕'},{hex:'#5c3a2e',n:'暖棕'},{hex:'#4a3540',n:'紫棕'},{hex:'#2a3a4a',n:'藏蓝'},{hex:'#3a4a3a',n:'墨绿'}]},
+{id:'lash',icon:'👁️',name:'睫毛',colors:[{hex:'#1a1a1a',n:'浓黑'},{hex:'#2a2020',n:'自然黑'},{hex:'#3c2820',n:'深棕'},{hex:'#4a3530',n:'暖棕'}]},
+{id:'aegyo',icon:'👀',name:'卧蚕',colors:[{hex:'#f5e6d3',n:'自然'},{hex:'#fef0d0',n:'香槟'},{hex:'#fff5e6',n:'珍珠白'},{hex:'#ffe8d0',n:'蜜桃金'}]},
+{id:'blush',icon:'🌸',name:'腮红',colors:[{hex:'#ffb6c1',n:'樱花粉'},{hex:'#e8b4b4',n:'淡粉'},{hex:'#f0c0a0',n:'蜜桃'},{hex:'#e89078',n:'珊瑚'},{hex:'#d4786e',n:'豆沙'},{hex:'#f5a0a8',n:'玫瑰粉'},{hex:'#ffc8b4',n:'杏色'}]},
+{id:'contour',icon:'🏷️',name:'修容',colors:[{hex:'#8b7355',n:'自然棕'},{hex:'#a0846c',n:'浅修容'},{hex:'#6b5640',n:'深修容'},{hex:'#7a6b5a',n:'冷棕'},{hex:'#9b8b7a',n:'灰褐'},{hex:'#5c4a38',n:'深咖'}]},
+{id:'highlight',icon:'⭐',name:'高光',colors:[{hex:'#fef0d0',n:'香槟金'},{hex:'#fff5e6',n:'珍珠白'},{hex:'#ffe8d0',n:'蜜桃金'},{hex:'#f0e8f0',n:'粉紫'},{hex:'#fce8d8',n:'玫瑰金'}]},
+{id:'lip',icon:'💄',name:'唇部',colors:[{hex:'#cc0033',n:'正红'},{hex:'#d4466a',n:'豆沙粉'},{hex:'#b33d5c',n:'浆果'},{hex:'#c25a5a',n:'砖红'},{hex:'#e8a0a0',n:'裸粉'},{hex:'#ff6b8a',n:'亮粉'},{hex:'#d4786e',n:'玫瑰'},{hex:'#c06050',n:'橘棕'}]},
+];
+
+// 默认淡妆α值·全局浓度 50% 时使用这些值
+var REGIONS=[
+{cat:'foundation',id:'foundation',name:'粉底',pts:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],blend:'normal',a:0.15,c:'#f5e6d3',shape:'face',blur:12},
+{cat:'foundation',id:'foreheadFd',name:'额头粉底',pts:[0,17,18,19,20,21,22,23,24,25,26,16],blend:'normal',a:0.12,c:'#f5e6d3',shape:'forehead',blur:15},
+{cat:'brow',id:'lBrow',name:'左眉',pts:[17,18,19,20,21],blend:'multiply',a:0.38,c:'#5c3a2e',shape:'stroke',blur:3},
+{cat:'brow',id:'rBrow',name:'右眉',pts:[22,23,24,25,26],blend:'multiply',a:0.38,c:'#5c3a2e',shape:'stroke',blur:3},
+{cat:'eyeshadow',id:'lEyeShadow',name:'左眼影',pts:[36,37,38,39,40,41],blend:'overlay',a:0.32,c:'#9b6b4a',shape:'eye',blur:8},
+{cat:'eyeshadow',id:'rEyeShadow',name:'右眼影',pts:[42,43,44,45,46,47],blend:'overlay',a:0.32,c:'#9b6b4a',shape:'eye',blur:8},
+{cat:'eyeliner',id:'lEyeliner',name:'左上眼线',pts:[36,37,38,39,40,41],blend:'multiply',a:0.40,c:'#1a1a1a',shape:'liner',blur:0},
+{cat:'eyeliner',id:'rEyeliner',name:'右上眼线',pts:[42,43,44,45,46,47],blend:'multiply',a:0.40,c:'#1a1a1a',shape:'liner',blur:0},
+{cat:'eyeliner',id:'lLowerLiner',name:'左下眼线',pts:[36,41,40,39,38,37],blend:'multiply',a:0.25,c:'#3c2820',shape:'lowerLiner',blur:0},
+{cat:'eyeliner',id:'rLowerLiner',name:'右下眼线',pts:[42,47,46,45,44,43],blend:'multiply',a:0.25,c:'#3c2820',shape:'lowerLiner',blur:0},
+{cat:'lash',id:'lUpperLash',name:'左上睫毛',pts:[36,37,38,39,40,41],blend:'multiply',a:0.35,c:'#1a1a1a',shape:'upperLash',blur:0},
+{cat:'lash',id:'rUpperLash',name:'右上睫毛',pts:[42,43,44,45,46,47],blend:'multiply',a:0.35,c:'#1a1a1a',shape:'upperLash',blur:0},
+{cat:'lash',id:'lLowerLash',name:'左下睫毛',pts:[36,41,40,39,38,37],blend:'multiply',a:0.22,c:'#3c2820',shape:'lowerLash',blur:0},
+{cat:'lash',id:'rLowerLash',name:'右下睫毛',pts:[42,47,46,45,44,43],blend:'multiply',a:0.22,c:'#3c2820',shape:'lowerLash',blur:0},
+{cat:'aegyo',id:'lAegyoSal',name:'左卧蚕',pts:[36,37,38,39,40,41],blend:'soft-light',a:0.22,c:'#fef0d0',shape:'aegyoSal',blur:6},
+{cat:'aegyo',id:'rAegyoSal',name:'右卧蚕',pts:[42,43,44,45,46,47],blend:'soft-light',a:0.22,c:'#fef0d0',shape:'aegyoSal',blur:6},
+{cat:'blush',id:'lBlush',name:'左腮红',pts:[1,2,3,31],blend:'multiply',a:0.25,c:'#e8b4b4',shape:'dot',blur:10},
+{cat:'blush',id:'rBlush',name:'右腮红',pts:[14,13,12,35],blend:'multiply',a:0.25,c:'#e8b4b4',shape:'dot',blur:10},
+{cat:'lip',id:'lipstick',name:'口红',pts:[48,49,50,51,52,53,54,55,56,57,58,59],blend:'multiply',a:0.38,c:'#cc0033',shape:'lip',blur:4},
+{cat:'lip',id:'lipGloss',name:'唇彩',pts:[60,61,62,63,64,65,66,67],blend:'overlay',a:0.18,c:'#ff6b8a',shape:'lip',blur:3},
+{cat:'lip',id:'lipLine',name:'唇线',pts:[48,49,50,51,52,53,54,55,56,57,58,59],blend:'multiply',a:0.30,c:'#b33d5c',shape:'lipLine',blur:1},
+{cat:'contour',id:'noseSh',name:'鼻影',pts:[31,32,33,34,35],blend:'multiply',a:0.18,c:'#8b7355',shape:'stroke',blur:6},
+{cat:'contour',id:'contour',name:'脸侧修容',pts:[3,4,5,6,11,12,13,14],blend:'multiply',a:0.16,c:'#8b7355',shape:'stroke',blur:12},
+{cat:'contour',id:'foreheadCt',name:'额头修容',pts:[0,17,18,25,26,16],blend:'multiply',a:0.12,c:'#8b7355',shape:'foreheadCt',blur:15},
+{cat:'highlight',id:'highlight',name:'颧骨高光',pts:[1,2,14,13],blend:'soft-light',a:0.16,c:'#c4a882',shape:'dot',blur:8},
+{cat:'highlight',id:'noseHi',name:'鼻高光',pts:[27,28,29,30],blend:'soft-light',a:0.20,c:'#c4a882',shape:'stroke',blur:4},
+{cat:'highlight',id:'foreheadHi',name:'额头高光',pts:[19,20,21,22,23,24],blend:'soft-light',a:0.14,c:'#c4a882',shape:'foreheadHi',blur:10},
+{cat:'blush',id:'freckles',name:'雀斑',pts:[1,2,3,14,13,12,31,32,33,34,35],blend:'multiply',a:0.15,c:'#8b6b4a',shape:'freckles',blur:1},
+{cat:'blush',id:'beautyMark',name:'美人痣',pts:[12,13,14,48,49],blend:'multiply',a:0.35,c:'#3c2820',shape:'beautyMark',blur:0},
+{cat:'highlight',id:'glitter',name:'亮片',pts:[1,2,14,13,36,37,42,43,27,28],blend:'screen',a:0.30,c:'#ffffff',shape:'glitter',blur:0},
+];
+var CAT_GROUPS=['foundation','brow','eyeshadow','eyeliner','lash','aegyo','blush','contour','highlight','lip'];
+var CAT_NAMES={foundation:'💆 底妆',brow:'🖊️ 眉毛',eyeshadow:'🎨 眼影',eyeliner:'✏️ 眼线',lash:'👁️ 睫毛',aegyo:'👀 卧蚕',blush:'🌸 腮红/特效',contour:'🏷️ 修容',highlight:'⭐ 高光',lip:'💄 唇部'};
+
+var FINISH={matte:'哑光',glossy:'镜面',shimmer:'珠光',satin:'丝绒',dewy:'水光',velvet:'丝绒'};
+var FINISHES_BY_REGION={
+lipstick:['matte','glossy','velvet'],lipGloss:['glossy','shimmer'],lipLine:['matte','glossy'],
+foundation:['matte','dewy'],foreheadFd:['matte','dewy'],
+lEyeShadow:['matte','shimmer','satin'],rEyeShadow:['matte','shimmer','satin'],
+lBlush:['matte','satin'],rBlush:['matte','satin'],
+highlight:['shimmer','glossy'],noseHi:['shimmer','glossy'],foreheadHi:['shimmer','glossy'],
+lAegyoSal:['matte','shimmer'],rAegyoSal:['matte','shimmer'],glitter:['shimmer'],
+};
+var DEFAULT_FINISH={lipstick:'matte',lipGloss:'glossy',lipLine:'matte',foundation:'matte',foreheadFd:'matte',
+lEyeShadow:'satin',rEyeShadow:'satin',lBlush:'satin',rBlush:'satin',
+highlight:'shimmer',noseHi:'shimmer',foreheadHi:'shimmer',lAegyoSal:'shimmer',rAegyoSal:'shimmer',
+lBrow:'matte',rBrow:'matte',lEyeliner:'matte',rEyeliner:'matte',lLowerLiner:'matte',rLowerLiner:'matte',
+lUpperLash:'matte',rUpperLash:'matte',lLowerLash:'matte',rLowerLash:'matte',
+noseSh:'matte',contour:'matte',foreheadCt:'matte',freckles:'matte',beautyMark:'matte',glitter:'shimmer'};
+
+var origImg=null,lastDetection=null,lastScale=1,showBefore=false;
+var masterIntensity=0.5; // 全局浓度·默认50%=淡妆
+var regionState={};
+REGIONS.forEach(function(r){regionState[r.id]={color:r.c,alpha:r.a,on:false,finish:DEFAULT_FINISH[r.id]||'matte'}});
+
+// ═══ UI ═══
+function buildColors(){var ctr=$('#color-palette');
+COLOR_CATS.forEach(function(cat){
+var d=document.createElement('div');d.className='color-cat';
+var title=document.createElement('div');title.className='color-cat-title';title.innerHTML=cat.icon+' '+cat.name;
+title.addEventListener('click',function(){scrollToCategory(cat.id)});d.appendChild(title);
+var dots=document.createElement('div');dots.className='color-dots';
+cat.colors.forEach(function(c,i){
+var dot=document.createElement('span');dot.className='color-dot';dot.style.background=c.hex;dot.title=c.n;
+dot.addEventListener('click',function(){
+$$('.color-dot').forEach(function(x){x.classList.remove('sel')});dot.classList.add('sel');
+REGIONS.filter(function(r){return r.cat===cat.id&&regionState[r.id].on}).forEach(function(r){regionState[r.id].color=c.hex;updateRegionUI(r.id)});
+redraw();scrollToCategory(cat.id);
+});dots.appendChild(dot);
+});d.appendChild(dots);ctr.appendChild(d);
+});}
+
+function scrollToCategory(catId){var panel=document.getElementById('panel-'+catId);if(!panel)return;panel.scrollIntoView({behavior:'smooth',block:'center'});panel.classList.add('flash');setTimeout(function(){panel.classList.remove('flash')},800);}
+
+function buildRegions(){var ctr=$('#makeup-palette');
+CAT_GROUPS.forEach(function(catId){
+var panel=document.createElement('div');panel.className='cat-panel';panel.id='panel-'+catId;
+panel.innerHTML='<h3>'+CAT_NAMES[catId]+'</h3>';
+REGIONS.filter(function(r){return r.cat===catId}).forEach(function(r){
+var row=document.createElement('div');row.className='region-row';
+var hasFinish=FINISHES_BY_REGION[r.id]!==undefined,defFin=DEFAULT_FINISH[r.id]||'matte';
+var finishHTML='';
+if(hasFinish){finishHTML='<select id="fin-'+r.id+'" class="finish-sel" disabled>';
+FINISHES_BY_REGION[r.id].forEach(function(f){finishHTML+='<option value="'+f+'"'+(defFin===f?' selected':'')+'>'+FINISH[f]+'</option>'});finishHTML+='</select>';}
+row.innerHTML='<span class="name">'+r.name+'</span><span class="swatch off" id="sw-'+r.id+'"></span><input type="range" id="a-'+r.id+'" min="0" max="100" value="'+Math.round(r.a*100)+'" disabled><span class="alpha-val" id="av-'+r.id+'">'+Math.round(r.a*100)+'%</span>'+finishHTML;
+row.querySelector('.swatch').addEventListener('click',function(){if(!lastDetection)return;regionState[r.id].on=!regionState[r.id].on;updateRegionUI(r.id);redraw()});
+row.querySelector('input').addEventListener('input',function(){if(!lastDetection)return;regionState[r.id].alpha=parseInt(this.value)/100;regionState[r.id].on=true;row.querySelector('.alpha-val').textContent=Math.round(regionState[r.id].alpha*100)+'%';updateRegionUI(r.id);redraw()});
+if(hasFinish){row.querySelector('select').addEventListener('change',function(){regionState[r.id].finish=this.value;redraw();log('🔄 '+r.name+': '+this.value)})}
+panel.appendChild(row);
+});ctr.appendChild(panel);
+});}
+
+function updateRegionUI(rid){var s=regionState[rid],sw=$('#sw-'+rid),sl=$('#a-'+rid),fs=$('#fin-'+rid);if(s.on){sw.style.background=s.color;sw.classList.remove('off');sl.disabled=false;sl.value=Math.round(s.alpha*100);$('#av-'+rid).textContent=Math.round(s.alpha*100)+'%';if(fs)fs.disabled=false}else{sw.style.background='#f0f0f0';sw.classList.add('off');sl.disabled=true;$('#av-'+rid).textContent='关';if(fs)fs.disabled=true}}
+
+// ═══ V1 ═══
+var t0=performance.now();
+async function loadModels(){var s=$('#v1-load');s.className='status running';s.textContent='🔄 加载模型中...';
+try{await faceapi.nets.tinyFaceDetector.loadFromUri('/models/');await faceapi.nets.faceLandmark68Net.loadFromUri('/models/');
+var ms=Math.round(performance.now()-t0);$('#load-ms').textContent=ms;s.className=ms<8000?'status pass':'status fail';s.textContent=ms<8000?'✅ V1通过 '+ms+'ms':'❌ 超时 '+ms+'ms';$('#detect-btn').disabled=false;log('✅ 模型加载完成')}catch(e){s.className='status fail';s.textContent='❌ '+e.message}}
+loadModels();buildColors();buildRegions();
+
+// 全局浓度滑块
+$('#master-intensity').addEventListener('input',function(){masterIntensity=parseInt(this.value)/100;$('#master-val').textContent=Math.round(masterIntensity*100)+'%';redraw()});
+
+var v1c=$('#v1-canvas'),ctx1=v1c.getContext('2d');
+$('#detect-btn').addEventListener('click',async function(){
+if(!$('#upload').files.length)return;var s=$('#v1-detect');s.className='status running';s.textContent='🔄 检测中...';
+var file=$('#upload').files[0];origImg=new Image();origImg.src=URL.createObjectURL(file);
+var img=await faceapi.bufferToImage(file);lastScale=Math.min(600/img.width,400/img.height);
+v1c.width=img.width*lastScale;v1c.height=img.height*lastScale;ctx1.drawImage(img,0,0,v1c.width,v1c.height);
+try{var r=await faceapi.detectSingleFace(img,new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+var ms=Math.round(performance.now()-t0);$('#det-ms').textContent=ms;
+if(!r){s.className='status fail';s.textContent='❌ 未检测到人脸';return}lastDetection=r;
+
+// 人脸质量告警
+var qEl=$('#face-quality'),score=r.detection.score,msg='',cls='';
+if(score<0.7){msg='⚠️ 人脸检测置信度较低 ('+Math.round(score*100)+'%)——原图可能有遮挡·模糊·侧脸。建议用清晰正面照·五官无遮挡。';cls='status warn'}
+else if(score<0.85){msg='🟡 检测质量一般 ('+Math.round(score*100)+'%)——基本可用·效果可能稍有偏差';cls='status running'}
+else{msg='🟢 人脸清晰·五官完整·检测置信度 '+Math.round(score*100)+'%';cls='status pass'}
+qEl.style.display='block';qEl.className=cls;qEl.textContent=msg;
+
+var lms=r.landmarks.positions.map(function(p){return{x:p.x*lastScale,y:p.y*lastScale}});
+for(var i=0;i<68;i++){var col='#4caf50';if(i>=17&&i<27)col='#8d6e63';else if(i>=27&&i<36)col='#ff9800';else if(i>=36&&i<48)col='#9c27b0';else if(i>=48)col='#f44336';ctx1.fillStyle=col;ctx1.beginPath();ctx1.arc(lms[i].x,lms[i].y,2.5,0,2*Math.PI);ctx1.fill()}
+s.className='status pass';s.textContent='✅ 检测通过 68点 '+ms+'ms';$('#lm-info').textContent='68点已标注';
+log('✅ 检测: 68点 '+ms+'ms 置信度 '+Math.round(score*100)+'%');
+$$('.region-row input[type=range]').forEach(function(x){x.disabled=false});$$('.finish-sel').forEach(function(x){x.disabled=false});
+['#apply-all','#clear-all','#toggle-cmp'].forEach(function(id){$(id).disabled=false});
+$('#master-intensity').disabled=false;
+REGIONS.forEach(function(r){regionState[r.id].on=false;regionState[r.id].finish=DEFAULT_FINISH[r.id]||'matte';updateRegionUI(r.id)});
+$('#v2-status').className='status running';$('#v2-status').textContent='🟢 就绪·浓度50%淡妆——先点「🌸清透裸妆」试试'}
+catch(e){s.className='status fail';s.textContent='❌ '+e.message}});
+
+// ═══ V2 · 离屏羽化渲染 ═══
+var v2c=$('#v2-canvas'),ctx2=v2c.getContext('2d');
+function centroid(pts){return{x:pts.reduce(function(a,p){return a+p.x},0)/pts.length,y:pts.reduce(function(a,p){return a+p.y},0)/pts.length}}
+function midPt(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+
+function blurMask(ctx,w,h,blurR,compositeOp,alpha,drawFn){
+  if(blurR<=0.5){ctx.save();ctx.globalCompositeOperation=compositeOp;ctx.globalAlpha=alpha;drawFn(ctx);ctx.restore();return}
+  var oc=document.createElement('canvas');oc.width=w;oc.height=h;
+  drawFn(oc.getContext('2d'));
+  ctx.save();ctx.globalCompositeOperation=compositeOp;ctx.globalAlpha=alpha;
+  ctx.filter='blur('+blurR+'px)';ctx.drawImage(oc,0,0);ctx.filter='none';ctx.restore();
+}
+function _poly(ctx,pts,color){if(pts.length<3)return;ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(var i=1;i<pts.length-1;i++){var xc=(pts[i].x+pts[i+1].x)/2,yc=(pts[i].y+pts[i+1].y)/2;ctx.quadraticCurveTo(pts[i].x,pts[i].y,xc,yc)}ctx.lineTo(pts[pts.length-1].x,pts[pts.length-1].y);ctx.closePath();ctx.fill()}
+function _stroke(ctx,pts,color,w){if(pts.length<2)return;ctx.strokeStyle=color;ctx.lineWidth=w;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(var i=1;i<pts.length-1;i++){var xc=(pts[i].x+pts[i+1].x)/2,yc=(pts[i].y+pts[i+1].y)/2;ctx.quadraticCurveTo(pts[i].x,pts[i].y,xc,yc)}ctx.lineTo(pts[pts.length-1].x,pts[pts.length-1].y);ctx.stroke()}
+function _ellipse(ctx,cx,cy,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,2*Math.PI);ctx.fill()}
+function _gradient(ctx,cx,cy,rx,ry,color){var g=ctx.createRadialGradient(cx,cy,rx*0.15,cx,cy,Math.max(rx,ry));g.addColorStop(0,color);g.addColorStop(1,'transparent');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,2*Math.PI);ctx.fill()}
+function _specular(ctx,cx,cy,rx,ry){ctx.globalCompositeOperation='screen';ctx.globalAlpha=0.2;ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(cx-rx*0.3,cy-ry*0.3,rx*0.25,ry*0.2,0,0,2*Math.PI);ctx.fill()}
+var _sparkleCache={};
+function _getSparkles(key,cx,cy,rx,ry,n){if(!_sparkleCache[key]){_sparkleCache[key]=[];for(var i=0;i<n;i++){_sparkleCache[key].push({x:cx+(Math.random()-0.5)*rx*1.6,y:cy+(Math.random()-0.5)*ry*1.6,r:0.5+Math.random()*1.5,a:0.3+Math.random()*0.5})}}return _sparkleCache[key]}
+function _sparkles(ctx,cx,cy,rx,ry,key){var sp=_getSparkles(key,cx,cy,rx,ry,18);ctx.save();ctx.globalCompositeOperation='screen';sp.forEach(function(p){ctx.globalAlpha=p.a;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,2*Math.PI);ctx.fill()});ctx.restore()}
+function _lashes(ctx,pts,angle,len,color,alpha,n){ctx.save();ctx.globalCompositeOperation='multiply';ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=0.8;ctx.lineCap='round';var step=Math.max(1,Math.floor(pts.length/n));for(var i=0;i<pts.length;i+=step){var p=pts[i];var rad=angle*Math.PI/180;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+Math.cos(rad)*len,p.y+Math.sin(rad)*len);ctx.stroke()}ctx.restore()}
+var _frecklePts=null;
+function _freckles(ctx,bounds,color,alpha){if(!_frecklePts){_frecklePts=[];for(var i=0;i<20;i++){_frecklePts.push({x:bounds.x+Math.random()*bounds.w,y:bounds.y+Math.random()*bounds.h,r:0.6+Math.random()*1.2,a:0.2+Math.random()*0.3})}}ctx.save();ctx.globalCompositeOperation='multiply';_frecklePts.forEach(function(p){ctx.globalAlpha=alpha*p.a;ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,2*Math.PI);ctx.fill()});ctx.restore()}
+
+function redraw(){
+if(!lastDetection||!origImg)return;var sc=Math.min(600/origImg.width,400/origImg.height);
+v2c.width=origImg.width*sc;v2c.height=origImg.height*sc;ctx2.drawImage(origImg,0,0,v2c.width,v2c.height);
+if(showBefore)return;
+var W=v2c.width,H=v2c.height,lms=lastDetection.landmarks.positions.map(function(p){return{x:p.x*sc,y:p.y*sc}});
+
+REGIONS.forEach(function(r){
+var st=regionState[r.id];if(!st.on)return;
+var pts=r.pts.map(function(i){return lms[i]}).filter(Boolean);if(!pts.length)return;
+var b=r.blur||0,bl=r.blend,al=st.alpha*masterIntensity*2,cl=st.color,sh=r.shape;
+// al=区域α×全局浓度×2（masterIntensity 0.5→al=α 即默认淡妆）
+switch(sh){
+case 'face':{var all=[].concat(pts,[lms[21],lms[22]].reverse());blurMask(ctx2,W,H,b,bl,al,function(octx){_poly(octx,all,cl)});if(st.finish==='dewy'){var cc=centroid(all);_specular(ctx2,cc.x,cc.y,30,15)}break}
+case 'forehead':{var bYs=pts.map(function(p){return p.y}),bY=Math.min.apply(null,bYs),nY=Math.max.apply(null,lms.filter(function(_,i){return i>=27&&i<=35}).map(function(p){return p.y})),fh=(nY-bY)*1.2,tY=Math.max(0,bY-fh),lX=Math.min.apply(null,pts.map(function(p){return p.x})),rX=Math.max.apply(null,pts.map(function(p){return p.x}));var all=[{x:lX,y:tY},{x:(lX+rX)/2,y:tY-5},{x:rX,y:tY}].concat(pts.slice(1,pts.length-1).reverse());blurMask(ctx2,W,H,b,bl,al,function(octx){_poly(octx,all,cl)});if(st.finish==='dewy'){var cc=centroid(all);_specular(ctx2,cc.x,cc.y,25,10)}break}
+case 'foreheadCt':{var bYs=pts.map(function(p){return p.y}),bY=Math.min.apply(null,bYs),nY=Math.max.apply(null,lms.filter(function(_,i){return i>=27&&i<=35}).map(function(p){return p.y})),fh=(nY-bY)*1.2,tY=Math.max(0,bY-fh),lX=Math.min.apply(null,pts.map(function(p){return p.x})),rX=Math.max.apply(null,pts.map(function(p){return p.x}));blurMask(ctx2,W,H,b,bl,al,function(octx){_poly(octx,[{x:lX,y:bY},{x:lX-3,y:tY+20},{x:lX+15,y:tY},{x:lX+10,y:bY}],cl)});break}
+case 'foreheadHi':{var c=centroid(pts),bw=Math.max.apply(null,pts.map(function(p){return p.x}))-Math.min.apply(null,pts.map(function(p){return p.x})),bYs2=pts.map(function(p){return p.y}),bY2=Math.min.apply(null,bYs2),nY2=Math.max.apply(null,lms.filter(function(_,i){return i>=27&&i<=35}).map(function(p){return p.y})),fh2=(nY2-bY2)*1.2;blurMask(ctx2,W,H,b,bl,al,function(octx){_ellipse(octx,c.x,c.y-fh2*0.4,bw*0.3,fh2*0.25,cl)});if(st.finish==='shimmer')_sparkles(ctx2,c.x,c.y-fh2*0.4,bw*0.3,fh2*0.25,r.id);if(st.finish==='glossy')_specular(ctx2,c.x,c.y-fh2*0.4,bw*0.2,fh2*0.15);break}
+case 'stroke':{var w=r.id.startsWith('lBrow')||r.id.startsWith('rBrow')?3.5:r.id.includes('noseSh')?3:r.id.includes('contour')?5:2;blurMask(ctx2,W,H,b,bl,al,function(octx){_stroke(octx,pts,cl,w)});break}
+case 'eye':{var c=centroid(pts),rx=(Math.max.apply(null,pts.map(function(p){return p.x}))-Math.min.apply(null,pts.map(function(p){return p.x})))/2+4,ry=(Math.max.apply(null,pts.map(function(p){return p.y}))-Math.min.apply(null,pts.map(function(p){return p.y})))/2+6;if(st.finish==='satin')blurMask(ctx2,W,H,b,'overlay',al,function(octx){_gradient(octx,c.x,c.y+2,rx,ry,cl)});else if(st.finish==='shimmer'){blurMask(ctx2,W,H,b,'overlay',al,function(octx){_ellipse(octx,c.x,c.y+2,rx,ry,cl)});_sparkles(ctx2,c.x,c.y,rx,ry,r.id)}else blurMask(ctx2,W,H,b,bl,al,function(octx){_ellipse(octx,c.x,c.y+2,rx,ry,cl)});break}
+case 'liner':{blurMask(ctx2,W,H,b,bl,al,function(octx){_stroke(octx,pts,cl,1.8)});break}
+case 'lowerLiner':{blurMask(ctx2,W,H,b,bl,al,function(octx){_stroke(octx,pts,cl,1.0)});break}
+case 'upperLash':{_lashes(ctx2,pts,-60,5,cl,st.alpha*masterIntensity*2,12);break}
+case 'lowerLash':{_lashes(ctx2,pts,45,3,cl,st.alpha*masterIntensity*2,8);break}
+case 'aegyoSal':{var c=centroid(pts);blurMask(ctx2,W,H,b,bl,al,function(octx){_ellipse(octx,c.x,c.y+10,10,3.5,cl)});if(st.finish==='shimmer')_sparkles(ctx2,c.x,c.y+10,8,3,r.id);break}
+case 'lip':{blurMask(ctx2,W,H,b,bl,al,function(octx){_poly(octx,pts,cl)});
+  if(st.finish==='glossy'||st.finish==='velvet'){var cc=centroid(pts);_specular(ctx2,cc.x,cc.y-3,8,4)}
+  if(st.finish==='shimmer'){var cc2=centroid(pts);_sparkles(ctx2,cc2.x,cc2.y,6,4,r.id)}
+  if(st.finish==='velvet'){ctx2.save();ctx2.globalCompositeOperation='screen';ctx2.globalAlpha=0.06;ctx2.fillStyle='#fff';ctx2.beginPath();var cc3=centroid(pts);ctx2.ellipse(cc3.x,cc3.y,6,4,0,0,2*Math.PI);ctx2.fill();ctx2.restore()}break;}
+case 'lipLine':{blurMask(ctx2,W,H,b,bl,al,function(octx){_stroke(octx,pts,cl,1.2)});break}
+case 'dot':{var c=centroid(pts),rxy=Math.max((Math.max.apply(null,pts.map(function(p){return p.x}))-Math.min.apply(null,pts.map(function(p){return p.x})))/2+3,10);
+  if(st.finish==='satin')blurMask(ctx2,W,H,b,'multiply',al,function(octx){_gradient(octx,c.x-2,c.y-4,rxy,rxy*0.8,cl)});
+  else if(st.finish==='shimmer'){blurMask(ctx2,W,H,b,'soft-light',al,function(octx){_ellipse(octx,c.x-2,c.y-4,rxy,rxy*0.8,cl)});_sparkles(ctx2,c.x,c.y,rxy,rxy*0.8,r.id)}
+  else if(st.finish==='glossy'){blurMask(ctx2,W,H,b,'soft-light',al,function(octx){_ellipse(octx,c.x-2,c.y-4,rxy,rxy*0.8,cl)});_specular(ctx2,c.x,c.y,rxy*0.6,rxy*0.4)}
+  else blurMask(ctx2,W,H,b,bl,al,function(octx){_ellipse(octx,c.x-2,c.y-4,rxy,rxy*0.8,cl)});break}
+case 'freckles':{var xs=pts.map(function(p){return p.x}),ys=pts.map(function(p){return p.y});_freckles(ctx2,{x:Math.min.apply(null,xs),y:Math.min.apply(null,ys),w:Math.max.apply(null,xs)-Math.min.apply(null,xs),h:Math.max.apply(null,ys)-Math.min.apply(null,ys)},cl,al);break}
+case 'beautyMark':{var c=centroid(pts);ctx2.save();ctx2.globalCompositeOperation=bl;ctx2.globalAlpha=al;ctx2.fillStyle=cl;ctx2.beginPath();ctx2.arc(c.x+15,c.y-10,2.5,0,2*Math.PI);ctx2.fill();ctx2.restore();break}
+case 'glitter':{var c=centroid(pts);_sparkles(ctx2,c.x,c.y,35,25,'glitter_global');break}
+}});
+}
+
+// ═══ 全局浓度 + 预设 ═══
+function setAllRegions(multiplier){REGIONS.forEach(function(r){regionState[r.id].alpha=Math.round(r.a*multiplier*100)/100});redraw()}
+function applyAllWithMaster(){REGIONS.forEach(function(r){regionState[r.id].on=true;regionState[r.id].color=r.c;regionState[r.id].alpha=r.a;regionState[r.id].finish=DEFAULT_FINISH[r.id]||'matte';updateRegionUI(r.id)});redraw()}
+
+$('#apply-all').addEventListener('click',function(){applyAllWithMaster();$('#v2-status').className='status pass';$('#v2-status').textContent='✅ 淡妆全妆·浓度'+Math.round(masterIntensity*100)+'%——拖顶部🎚️调整体浓度'});
+$('#clear-all').addEventListener('click',function(){REGIONS.forEach(function(r){regionState[r.id].on=false;updateRegionUI(r.id)});redraw();$('#v2-status').className='status running';$('#v2-status').textContent='🔄 已清除'});
+$('#toggle-cmp').addEventListener('click',function(){showBefore=!showBefore;$('#toggle-cmp').textContent=showBefore?'↔ 回到妆效':'↔ 前后对比';redraw()});
+// 预设
+$('#preset-sheer').addEventListener('click',function(){masterIntensity=0.35;$('#master-intensity').value=35;$('#master-val').textContent='35%';applyAllWithMaster();$('#v2-status').className='status pass';$('#v2-status').textContent='🌸 清透裸妆·浓度35%——若有似无·气色好'});
+$('#preset-daily').addEventListener('click',function(){masterIntensity=0.65;$('#master-intensity').value=65;$('#master-val').textContent='65%';applyAllWithMaster();$('#v2-status').className='status pass';$('#v2-status').textContent='💼 日常通勤·浓度65%——精致但不浓'});
+</script>
+</body>
+</html>

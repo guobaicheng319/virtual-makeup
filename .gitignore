@@ -1,0 +1,25 @@
+# 密钥
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+src/node_modules/
+
+# 数据库
+server/data/*.db
+
+# 临时文件
+public/uploads/*
+!public/uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+.v2/cache/
+test-results/
+src/node_modules/
+server/__pycache__/

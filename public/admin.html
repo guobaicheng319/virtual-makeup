@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>试妆助手 · 管理后台</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, sans-serif; background: #f5f5f5; color: #333; padding: 16px; }
+h1 { font-size: 20px; margin-bottom: 4px; }
+.subtitle { font-size: 13px; color: #999; margin-bottom: 16px; }
+.nav { display: flex; gap: 4px; margin-bottom: 16px; }
+.nav a { font-size: 13px; color: #e8788a; text-decoration: none; padding: 4px 0; }
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #eee; }
+.tab { padding: 10px 16px; border: none; background: none; font-size: 15px; cursor: pointer; border-bottom: 2px solid transparent; }
+.tab.active { border-bottom-color: #e8788a; color: #e8788a; font-weight: 600; }
+
+.template-list { display: flex; flex-direction: column; gap: 8px; }
+.template-item { background: #fff; border-radius: 10px; padding: 14px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.template-thumb { width: 60px; height: 60px; border-radius: 8px; background: #fef5f6; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; }
+.template-info { flex: 1; min-width: 0; }
+.template-name { font-size: 15px; font-weight: 600; }
+.template-meta { font-size: 12px; color: #999; margin-top: 2px; }
+.template-prompt { font-size: 11px; color: #bbb; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.template-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-sm { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; cursor: pointer; background: #fff; }
+.btn-sm.danger { color: #d4627a; border-color: #fdd; }
+.btn-sm.primary { background: #e8788a; color: #fff; border-color: #e8788a; }
+
+.form-card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.form-row { margin-bottom: 12px; }
+.form-label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+.form-input, .form-select, .form-textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; font-family: inherit; }
+.form-textarea { resize: vertical; }
+.form-hint { font-size: 11px; color: #bbb; margin-top: 2px; }
+.form-actions { display: flex; gap: 8px; margin-top: 16px; }
+.btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+.btn.primary { background: #e8788a; color: #fff; }
+.btn.secondary { background: #f0f0f0; color: #666; }
+.btn:disabled { opacity: 0.5; }
+.lead-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; }
+.lead-table th, .lead-table td { padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+.lead-table th { background: #fafafa; font-weight: 600; }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+.status-badge.new { background: #e3f2fd; color: #1976d2; }
+.status-badge.contacted { background: #fff3e0; color: #f57c00; }
+.status-badge.booked { background: #e8f5e9; color: #388e3c; }
+
+.upload-row { display: flex; gap: 8px; }
+.upload-row .form-input { flex: 1; }
+.upload-preview-img { max-width: 200px; max-height: 150px; border-radius: 8px; margin-top: 8px; }
+.toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #fff; padding: 10px 24px; border-radius: 8px; font-size: 14px; z-index: 999; }
+.empty { text-align: center; padding: 40px; color: #999; }
+</style>
+</head>
+<body>
+
+<h1>🪞 管理后台</h1>
+<p class="subtitle">妆容模板 + 留资管理</p>
+
+<div class="nav"><a href="/">← 返回客户端</a></div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('list')">模板列表</button>
+  <button class="tab" onclick="switchTab('add')">+ 添加模板</button>
+  <button class="tab" onclick="switchTab('leads')">留资记录</button>
+  <button class="tab" onclick="switchTab('config')">全局提示词</button>
+</div>
+
+<div id="tab-list"><div id="template-list" class="template-list"></div></div>
+
+<div id="tab-add" style="display:none">
+  <div class="form-card">
+    <div class="form-row"><label class="form-label">妆容名称 *</label><input id="f-name" class="form-input" placeholder="夏日蜜桃妆"></div>
+    <div class="form-row"><label class="form-label">分类 *</label><select id="f-category" class="form-select"><option>日常妆</option><option>新娘妆</option><option>晚宴妆</option><option>其他</option></select></div>
+    <div class="form-row"><label class="form-label">风格</label><select id="f-style" class="form-select"><option>韩系</option><option>日系</option><option>欧美</option><option>纯欲</option><option>甜酷</option><option>日常</option></select></div>
+    <div class="form-row"><label class="form-label">色调</label><select id="f-tone" class="form-select"><option>暖调</option><option>冷调</option><option>中性</option></select></div>
+    <div class="form-row"><label class="form-label">效果图</label><div class="upload-row"><input id="f-image" class="form-input" placeholder="选择图片自动上传并填入URL"><button class="btn-sm primary" onclick="uploadImg('f-image')">上传</button></div><input type="file" id="f-image-file" accept="image/*" style="display:none" onchange="doUpload('f-image')"><img id="f-image-preview" class="upload-preview-img" style="display:none"><p class="form-hint">展示在详情页的大图·点上传选本地图片</p></div>
+    <div class="form-row"><label class="form-label">缩略图</label><div class="upload-row"><input id="f-thumb" class="form-input" placeholder="选择图片自动上传并填入URL"><button class="btn-sm primary" onclick="uploadImg('f-thumb')">上传</button></div><input type="file" id="f-thumb-file" accept="image/*" style="display:none" onchange="doUpload('f-thumb')"><img id="f-thumb-preview" class="upload-preview-img" style="display:none"><p class="form-hint">列表页小图·建议用同一张图，自动缩放</p></div>
+    <div class="form-row"><label class="form-label">简介</label><input id="f-desc" class="form-input" placeholder="清透水光肌+蜜桃色腮红，适合日常"></div>
+    <div class="form-row"><label><input type="checkbox" id="f-published" checked> 发布上线</label></div>
+    <div class="form-actions"><button class="btn primary" id="btn-save" onclick="saveTemplate()">保存</button><button class="btn secondary" onclick="cancelEdit()">取消</button></div>
+    <input type="hidden" id="f-id" value="">
+  </div>
+</div>
+
+<div id="tab-leads" style="display:none"><div id="lead-list"></div></div>
+
+<!-- 全局提示词编辑器 -->
+<div id="tab-config" style="display:none">
+  <div class="form-card">
+    <div class="form-row">
+      <label class="form-label">🧠 全局基准提示词</label>
+      <textarea id="cfg-global" class="form-textarea" rows="4"></textarea>
+      <p class="form-hint">所有生成的基础 prompt，决定了 AI 出图的整体风格和质感</p>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn primary" onclick="saveConfig()">💾 保存配置</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script>
+const API = '/api'; let editingId = null;
+
+async function loadList() {
+  const r = await fetch(API+'/templates?published_only=false');
+  const data = await r.json();
+  const el = document.getElementById('template-list');
+  if(!data.length){el.innerHTML='<div class="empty">暂无模板</div>';return;}
+  el.innerHTML = data.map(t => '<div class="template-item"><div class="template-thumb">'+(t.thumbnail_url?'<img src="'+esc(t.thumbnail_url)+'" style="width:100%;height:100%;object-fit:cover;border-radius:8px">':'💄')+'</div><div class="template-info"><div class="template-name">'+esc(t.name)+' '+(t.is_published?'':'<span style="color:#999;font-size:12px">[草稿]</span>')+'</div><div class="template-meta">'+esc(t.category)+' · '+esc(t.makeup_style)+' · '+esc(t.color_tone)+'</div></div><div class="template-actions"><button class="btn-sm" onclick="editTemplate('+t.id+')">编辑</button><button class="btn-sm danger" onclick="deleteTemplate('+t.id+',\''+esc(t.name)+'\')">删除</button></div></div>').join('');
+}
+
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+async function editTemplate(id){
+  const r = await fetch(API+'/templates/'+id); const t = await r.json();
+  editingId = id;
+  document.getElementById('f-id').value = t.id;
+  document.getElementById('f-name').value = t.name||'';
+  document.getElementById('f-category').value = t.category||'日常妆';
+  document.getElementById('f-style').value = t.makeup_style||'韩系';
+  document.getElementById('f-tone').value = t.color_tone||'暖调';
+  document.getElementById('f-image').value = t.image_url||'';
+  document.getElementById('f-thumb').value = t.thumbnail_url||'';
+  if(t.image_url){ document.getElementById('f-image-preview').src=t.image_url; document.getElementById('f-image-preview').style.display=''; }
+  else document.getElementById('f-image-preview').style.display='none';
+  if(t.thumbnail_url){ document.getElementById('f-thumb-preview').src=t.thumbnail_url; document.getElementById('f-thumb-preview').style.display=''; }
+  else document.getElementById('f-thumb-preview').style.display='none';
+  document.getElementById('f-desc').value = t.description||'';
+  document.getElementById('f-published').checked = t.is_published==1;
+  document.getElementById('btn-save').textContent = '更新';
+  switchTab('add');
+}
+
+async function saveTemplate(){
+  const body = {
+    name: document.getElementById('f-name').value.trim(),
+    category: document.getElementById('f-category').value,
+    makeup_style: document.getElementById('f-style').value,
+    color_tone: document.getElementById('f-tone').value,
+    image_url: document.getElementById('f-image').value.trim(),
+    thumbnail_url: document.getElementById('f-thumb').value.trim(),
+    description: document.getElementById('f-desc').value.trim(),
+    is_published: document.getElementById('f-published').checked?1:0,
+  };
+  if(!body.name||!body.category){toast('请填写名称和分类');return;}
+  const id = document.getElementById('f-id').value;
+  const r = await fetch(id?API+'/templates/'+id:API+'/templates', {
+    method: id?'PUT':'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  if(r.ok){toast(id?'✅ 已更新':'✅ 已添加');cancelEdit();loadList();}
+  else {const d=await r.json();toast('❌ '+(d.error?.message||'保存失败'));}
+}
+
+async function deleteTemplate(id,name){
+  if(!confirm('确定删除「'+name+'」？'))return;
+  await fetch(API+'/templates/'+id,{method:'DELETE'});
+  toast('已删除');loadList();
+}
+
+function cancelEdit(){
+  editingId=null;document.getElementById('f-id').value='';
+  document.getElementById('btn-save').textContent='保存';
+  ['name','image','thumb','desc'].forEach(f=>document.getElementById('f-'+f).value='');
+  ['image','thumb'].forEach(f=>document.getElementById('f-'+f+'-preview').style.display='none');
+  switchTab('list');
+}
+
+async function loadLeads(){
+  const r = await fetch(API+'/leads'); const data = await r.json();
+  const el = document.getElementById('lead-list');
+  if(!data.length){el.innerHTML='<div class="empty">暂无留资</div>';return;}
+  const m={new:'新线索',contacted:'已联系',booked:'已预约',completed:'已完成',cancelled:'已取消'};
+  el.innerHTML = '<table class="lead-table"><tr><th>手机号</th><th>微信</th><th>时间</th><th>状态</th></tr>'
+    + data.map(l=>'<tr><td>'+esc(l.phone)+'</td><td>'+esc(l.wechat||'-')+'</td><td>'+(l.created_at||'').replace('T',' ').substring(0,16)+'</td><td><span class="status-badge '+l.status+'">'+(m[l.status]||l.status)+'</span></td></tr>').join('')+'</table>';
+}
+
+function switchTab(t){
+  const tabs = ['list','add','leads','config'];
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',i===tabs.indexOf(t)));
+  document.getElementById('tab-list').style.display = t==='list'?'':'none';
+  document.getElementById('tab-add').style.display = t==='add'?'':'none';
+  document.getElementById('tab-leads').style.display = t==='leads'?'':'none';
+  document.getElementById('tab-config').style.display = t==='config'?'':'none';
+  if(t==='list')loadList(); if(t==='leads')loadLeads(); if(t==='config')loadConfig();
+}
+
+// ── 全局配置 ──
+async function loadConfig(){
+  const r = await fetch(API+'/config');
+  const cfg = await r.json();
+  document.getElementById('cfg-global').value = cfg.global_prompt||'';
+}
+
+async function saveConfig(){
+  const data = { global_prompt: document.getElementById('cfg-global').value.trim() };
+
+  const r = await fetch(API+'/config', {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  if(r.ok){ toast('✅ 配置已保存·下次生成生效'); }
+  else {
+    const err = await r.json().catch(()=>({}));
+    toast('❌ 保存失败: ' + (err.error?.message || r.status + ' ' + r.statusText));
+  }
+}
+
+function uploadImg(fieldId){ document.getElementById(fieldId+'-file').click(); }
+async function doUpload(fieldId){
+  const file = document.getElementById(fieldId+'-file').files[0];
+  if(!file) return;
+  const form = new FormData(); form.append('file', file);
+  toast('上传中...');
+  const r = await fetch('/api/upload', {method:'POST', body:form});
+  const d = await r.json();
+  if(r.ok){
+    document.getElementById(fieldId).value = d.url;
+    document.getElementById(fieldId+'-preview').src = d.url;
+    document.getElementById(fieldId+'-preview').style.display = '';
+    toast('✅ 已上传');
+  } else { toast('❌ '+(d.error?.message||'上传失败')); }
+}
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.style.display='';setTimeout(()=>el.style.display='none',2500);}
+loadList();
+</script>
+</body>
+</html>

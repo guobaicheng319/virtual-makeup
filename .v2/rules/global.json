@@ -1,0 +1,64 @@
+{
+  "_comment": "阶段0产出·全局硬性约束·所有模块必须遵守",
+  "version": 1,
+  "project": "virtual-makeup",
+  "constraints": {
+    "security": [
+      "禁止硬编码密钥——所有密钥走 .env + .gitignore",
+      "所有用户输入做校验——不允许信任任何外部数据（手机号格式·图片类型·文件大小）",
+      "SQL 查询使用参数绑定——禁止字符串拼接",
+      "用户上传图片不存服务器——浏览器本地处理·隐私友好"
+    ],
+    "forbidden": [
+      "eval()——代码注入风险",
+      "exec()——代码注入风险",
+      "os.system()——使用 subprocess 替代",
+      "裸 except: ——最少 except Exception",
+      "print() 作为日志——使用 logging 模块",
+      "硬编码文件路径——使用 pathlib.Path",
+      "购买/集成商业人脸SDK——预算约束"
+    ],
+    "format": [
+      "PEP 8 代码风格",
+      "类型注解——所有函数参数和返回值",
+      "单文件 ≤ 500 行",
+      "单函数 ≤ 50 行"
+    ],
+    "architecture": [
+      "模块间通过接口通信——禁止直接访问其他模块的私有方法",
+      "单一入口——前端一个index.html·后端一个app.py入口",
+      "配置文件统一在 config/ 目录",
+      "数据库操作集中在一个模块——其他模块通过它访问数据",
+      "前端试妆逻辑与UI分离——face-api检测·Canvas渲染·UI控制三层独立"
+    ],
+    "error_handling": [
+      "所有外部调用（HTTP/DB/CDN）必须有超时参数",
+      "异常必须记录日志——不能静默吞掉",
+      "用户看到的错误信息不能暴露内部实现细节",
+      "face-api.js加载失败→提示'网络不稳定，请刷新重试'·不白屏"
+    ],
+    "project_specific": [
+      "妆容图层模板格式：半透明PNG·按面部区域命名(唇/眼/腮红/眉)·带定位锚点配置",
+      "留资数据必填字段：手机号+微信号·选填：姓名+预约日期+来源渠道",
+      "分享图片自动合成：试妆效果+工作室二维码+简短文案→一张图保存到相册"
+    ]
+  },
+  "module_template": {
+    "_comment": "每个模块规则文件参照此结构",
+    "module": "<模块名>",
+    "based_on_global_version": 1,
+    "responsibility": "一句话描述模块职责",
+    "not_responsible_for": ["不管什么"],
+    "interfaces": {
+      "in": ["参数: 类型"],
+      "out": ["返回值: 类型"]
+    },
+    "rules": {
+      "must": ["必须做的事"],
+      "must_not": ["禁止做的事"],
+      "performance": "性能指标",
+      "error_behavior": "错误行为描述"
+    },
+    "dependencies": ["依赖的模块名"]
+  }
+}

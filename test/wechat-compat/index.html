@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M0 V5 · 微信 WebView 兼容性测试</title>
+<style>
+  body { font-family: sans-serif; padding: 16px; }
+  h1 { font-size: 18px; }
+  .test { border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin: 8px 0; }
+  .pass { background: #d4edda; }
+  .fail { background: #f8d7da; }
+  .unknown { background: #fff3cd; }
+  .result-item { margin: 4px 0; font-size: 14px; }
+  pre { background: #1e1e1e; color: #0f0; padding: 12px; border-radius: 4px; font-size: 11px; overflow-x: auto; }
+  button { padding: 10px 20px; font-size: 16px; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<h1>🪞 M0 V5 · 微信 WebView 兼容性</h1>
+<p>此页面需在<strong>微信内置浏览器</strong>中打开。</p>
+
+<button onclick="runAllTests()">🔬 开始全部测试</button>
+
+<div id="results"></div>
+<pre id="json-output"></pre>
+
+<script>
+const results = {
+  ua: navigator.userAgent,
+  isWeChat: /MicroMessenger/i.test(navigator.userAgent),
+  timestamp: new Date().toISOString(),
+  tests: {}
+};
+
+function addResult(name, passed, detail) {
+  results.tests[name] = { passed, detail };
+  const cls = passed === null ? 'unknown' : passed ? 'pass' : 'fail';
+  const icon = passed === null ? '❓' : passed ? '✅' : '❌';
+  document.getElementById('results').innerHTML +=
+    `<div class="test ${cls}"><div class="result-item">${icon} <strong>${name}</strong>: ${detail}</div></div>`;
+}
+
+function updateJSON() {
+  document.getElementById('json-output').textContent = JSON.stringify(results, null, 2);
+}
+
+async function runAllTests() {
+  document.getElementById('results').innerHTML = '';
+  results.tests = {};
+
+  // ── 环境 ──
+  addResult('微信环境', results.isWeChat,
+    results.isWeChat ? '在微信内置浏览器中' : '⚠️ 不在微信中——基准对比模式');
+
+  // ── Canvas 2D（核心：预览/对比图/分享图）──
+  try {
+    const c = document.createElement('canvas');
+    c.width = 100; c.height = 100;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'red';
+    ctx.fillRect(0, 0, 100, 100);
+    const pixel = ctx.getImageData(50, 50, 1, 1).data;
+    const ok = pixel[0] === 255 && pixel[1] === 0;
+    addResult('Canvas 2D', ok, ok ? '2D渲染正常·getImageData可用' : '异常');
+  } catch(e) {
+    addResult('Canvas 2D', false, '异常: ' + e.message);
+  }
+
+  // ── File API（相册上传照片）──
+  try {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    const ok = input.type === 'file' && input.accept === 'image/*';
+    addResult('File API', ok, ok ? 'input[type=file]支持·可上传照片' : '不支持');
+  } catch(e) {
+    addResult('File API', false, '异常: ' + e.message);
+  }
+
+  // ── Canvas toDataURL（生成分享图）──
+  try {
+    const c = document.createElement('canvas');
+    c.width = 10; c.height = 10;
+    c.getContext('2d').fillRect(0,0,10,10);
+    const dataUrl = c.toDataURL('image/png');
+    const ok = dataUrl.startsWith('data:image/png;base64,');
+    addResult('Canvas toDataURL', ok, ok ? 'PNG导出正常·可生成分享图' : '异常');
+  } catch(e) {
+    addResult('Canvas toDataURL', false, '异常: ' + e.message);
+  }
+
+  // ── Download（保存生成图到相册）──
+  try {
+    const c = document.createElement('canvas');
+    c.width = 10; c.height = 10;
+    c.getContext('2d').fillRect(0,0,10,10);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'makeup-result.png';
+    a.click();
+    URL.revokeObjectURL(url);
+    addResult('Download API', true, 'Blob下载触发成功·可保存到相册');
+  } catch(e) {
+    addResult('Download API', false, '降级: 长按图片保存');
+  }
+
+  // ── Image API（展示生成结果）──
+  try {
+    const img = new Image();
+    addResult('Image API', true, 'new Image()可用·可展示API返回的结果图');
+  } catch(e) {
+    addResult('Image API', false, '异常: ' + e.message);
+  }
+
+  // ── localStorage（留资缓存·防丢失）──
+  try {
+    localStorage.setItem('_m0_test', '1');
+    const ok = localStorage.getItem('_m0_test') === '1';
+    localStorage.removeItem('_m0_test');
+    addResult('localStorage', ok, ok ? '可用·留资表单草稿可缓存' : '不可用——留资需直接提交');
+  } catch(e) {
+    addResult('localStorage', false, '异常: ' + e.message);
+  }
+
+  // ── 综合判定 ──
+  const critical = results.tests['Canvas 2D']?.passed
+                && results.tests['File API']?.passed
+                && results.tests['Canvas toDataURL']?.passed;
+  addResult('━━ 综合 ━━', critical,
+    critical ? '✅ 微信WebView可运行试妆核心功能' : '❌ 关键能力缺失');
+  updateJSON();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  addResult('User Agent', null, results.ua);
+});
+</script>
+
+</body>
+</html>

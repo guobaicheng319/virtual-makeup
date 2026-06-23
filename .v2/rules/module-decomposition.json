@@ -1,0 +1,185 @@
+{
+  "_comment": "L-027 四张表模块拆分——铁椅 v3.4 输出·三层架构+平台适配层",
+  "version": 1,
+  "project": "virtual-makeup",
+  "architecture_layers": {
+    "_rationale": "三层分离防止检测逻辑/渲染逻辑/业务逻辑混入同一Vue组件。每层通过接口通信，禁止跨层直接调用",
+    "detection_layer": "面部检测+相机采集——只管"脸在哪"，不管"怎么画"",
+    "rendering_layer": "Canvas妆容叠加+时序滤波——只管"怎么画"，不管"画什么"",
+    "business_layer": "妆容浏览+留资+分享+外壳——只管"用户要什么"，不管"怎么检测和渲染""
+  },
+  "modules": [
+    {
+      "id": "M1",
+      "name": "FaceDetectionEngine",
+      "layer": "detection_layer",
+      "dir": "src/engine/detection/",
+      "responsibility": "封装面部关键点检测——输入图片→输出68点landmarks坐标。通过FaceDetector接口隔离底层库",
+      "not_responsible_for": ["相机操作", "Canvas渲染", "妆容选择逻辑", "UI状态"],
+      "interfaces": {
+        "in": "detect(image: HTMLImageElement | HTMLVideoElement): Promise<DetectionResult>",
+        "out": "DetectionResult { landmarks: [{x,y}×68], boundingBox: {x,y,w,h}, confidence: number, timestamp: number } | FaceNotFoundError | DetectionTimeoutError"
+      },
+      "tech_note": "默认实现 face-api.js adapter（FaceDetectorFaceApi）。切换MediaPipe时只需实现MediaPipeFaceDetector，不改消费模块。Chrome 119+ WebGL黑屏问题由adapter层统一处理降级(WebGL→CPU)",
+      "dependencies": []
+    },
+    {
+      "id": "M2",
+      "name": "CameraCapture",
+      "layer": "detection_layer",
+      "dir": "src/engine/capture/",
+      "responsibility": "获取图片输入源——摄像头实时流/文件上传/相册选取。处理权限请求和降级",
+      "not_responsible_for": ["人脸检测", "Canvas渲染", "图片裁剪美颜"],
+      "interfaces": {
+        "in": "start(source: 'camera' | 'file' | 'album'): Promise<MediaStream | File>",
+        "out": "HTMLVideoElement (实时流) | HTMLImageElement (静态图)"
+      },
+      "wechat_fallback": {
+        "path1_best": "getUserMedia → MediaStream → 实时视频流",
+        "path2_fallback": "微信JSSDK chooseImage → 拍照后上传 → 单帧检测（无实时预览）",
+        "path3_last": "纯文件上传 input[type=file] accept=image/*——微信webview不支持getUserMedia时的降级底线"
+      },
+      "dependencies": []
+    },
+    {
+      "id": "M3",
+      "name": "CanvasRenderer",
+      "layer": "rendering_layer",
+      "dir": "src/engine/render/",
+      "responsibility": "根据面部关键点将妆容图层模板叠加到Canvas上——半透明PNG定位+缩放+blend",
+      "not_responsible_for": ["面部检测", "妆容模板管理", "用户交互", "分享截图"],
+      "interfaces": {
+        "in": "render(landmarks: DetectionResult, makeupTemplate: MakeupTemplate, baseImage: HTMLImageElement|HTMLVideoElement, options?: {timestamp?: number}): Promise<HTMLCanvasElement>",
+        "out": "HTMLCanvasElement (已叠加妆容的完整画布)"
+      },
+      "blend_modes": ["multiply (口红/腮红)", "overlay (眼影)", "normal (粉底)", "soft-light (高光)"],
+      "performance": "目标30fps实时渲染·降级路径: WebGL→Canvas 2D·微信WebView默认走Canvas 2D",
+      "dependencies": ["MakeupTemplate (数据对象·非模块依赖)"]
+    },
+    {
+      "id": "M4",
+      "name": "TemporalFilter",
+      "layer": "rendering_layer",
+      "dir": "src/engine/filter/",
+      "responsibility": "对连续帧的landmarks做时序平滑——消除面部检测抖动导致妆容飘移",
+      "not_responsible_for": ["检测本身", "Canvas渲染", "妆容逻辑"],
+      "interfaces": {
+        "in": "smooth(current: DetectionResult, history: DetectionResult[]): DetectionResult",
+        "out": "DetectionResult (平滑后的关键点·抖动幅度<2px)"
+      },
+      "algorithm": "指数移动平均(EMA)·alpha=0.6·仅对68个landmark的(x,y)做平滑·z轴和confidence不做",
+      "dependencies": []
+    },
+    {
+      "id": "M5",
+      "name": "MakeupController",
+      "layer": "business_layer",
+      "dir": "src/makeup/",
+      "responsibility": "试妆业务编排——协调检测→渲染→滤波的完整流程。选模板·切换妆容·对比模式",
+      "not_responsible_for": ["Canvas渲染细节", "面部检测实现", "模板数据CRUD"],
+      "interfaces": {
+        "in": "applyMakeup(imageSource, templateId): void · switchTemplate(templateId): void · toggleCompare(): void",
+        "out": "事件: makeup:applied · makeup:error · detection:failed——UI层监听这些事件更新界面"
+      },
+      "user_flow": "拍照→识脸(loading)→选模板→实时预览→对比模式(左右滑)→满意→去留资",
+      "loading_states": {
+        "face_api_loading": "进度条+剩余秒数估算·5-15MB模型加载中",
+        "detection_running": "面部框动画·"正在识别您的面部"",
+        "detection_failed": "具体失败原因·不是"出错了"——无人脸/光线暗/侧脸/多人脸·每个有对应提示"
+      },
+      "dependencies": ["FaceDetectionEngine(M1)", "CameraCapture(M2)", "CanvasRenderer(M3)", "TemporalFilter(M4)"]
+    },
+    {
+      "id": "M6",
+      "name": "GalleryView",
+      "layer": "business_layer",
+      "dir": "src/gallery/",
+      "responsibility": "妆容模板浏览——分类筛选·列表展示·详情预览·选模板进入试妆",
+      "not_responsible_for": ["试妆渲染", "模板数据CRUD", "留资逻辑"],
+      "interfaces": {
+        "in": "(props) category?: string",
+        "out": "事件: template:selected(Template) → MakeupController消费"
+      },
+      "dependencies": ["TemplateService API (后端)"]
+    },
+    {
+      "id": "M7",
+      "name": "SharingGenerator",
+      "layer": "business_layer",
+      "dir": "src/share/",
+      "responsibility": "生成分享图片——前后对比+二维码+文案合成一张图·保存到相册",
+      "not_responsible_for": ["试妆渲染", "留资", "模板管理"],
+      "interfaces": {
+        "in": "generate(beforeImage, afterCanvas, studioQRCode: string, caption?: string): Promise<Blob>",
+        "out": "Blob (PNG·可直接save/share)"
+      },
+      "wechat_paths": {
+        "with_jssdk": "微信JSSDK wx.updateTimelineShareData → 直接分享到朋友圈",
+        "without_jssdk": "Canvas合成→转为<img>→长按保存→手动发朋友圈(纯Web无公众号方案)"
+      },
+      "dependencies": []
+    },
+    {
+      "id": "M8",
+      "name": "TemplateService",
+      "layer": "backend",
+      "dir": "server/template/",
+      "responsibility": "妆容模板CRUD+分类管理+图片上传/存储——Flask蓝图",
+      "not_responsible_for": ["前端展示", "试妆渲染", "留资逻辑"],
+      "interfaces": {
+        "in": "GET /api/templates?category=X · POST /admin/templates · PUT /admin/templates/:id · DELETE /admin/templates/:id",
+        "out": "JSON {templates: [{id,name,category,thumbnail_url,layers:[{region,image_url,blend_mode}]}]}"
+      },
+      "dependencies": ["DBLayer (SQLite)"]
+    },
+    {
+      "id": "M9",
+      "name": "AppointmentService",
+      "layer": "backend",
+      "dir": "server/lead/",
+      "responsibility": "留资提交+预约管理+管理后台鉴权+数据导出——Flask蓝图",
+      "not_responsible_for": ["模板管理", "前端UI"],
+      "interfaces": {
+        "public": "POST /api/lead/submit → {phone, wechat, name?, preferred_date?}",
+        "admin": "GET /admin/leads · PUT /admin/leads/:id · GET /admin/leads/export"
+      },
+      "auth": "HTTP Basic Auth for /admin/* · 公开接口无需认证",
+      "dependencies": ["DBLayer (SQLite)"]
+    },
+    {
+      "id": "M10",
+      "name": "DBLayer",
+      "layer": "backend",
+      "dir": "server/db/",
+      "responsibility": "数据库操作唯一入口——连接管理·迁移·查询封装·备份",
+      "not_responsible_for": ["业务逻辑", "请求处理", "鉴权"],
+      "interfaces": {
+        "in": "query(sql, params) · execute(sql, params) · migrate() · backup(path)",
+        "out": "查询结果(list of dict) · 受影响行数(int)"
+      },
+      "dependencies": []
+    }
+  ],
+  "dataflow": {
+    "frontend_pipeline": "CameraCapture(M2) → FaceDetectionEngine(M1) → TemporalFilter(M4) → CanvasRenderer(M3) → MakeupController(M5) → SharingGenerator(M7)",
+    "backend_pipeline": "GalleryView(M6) → HTTP → TemplateService(M8) → DBLayer(M10) → SQLite · MakeupController(M5) → HTTP → AppointmentService(M9) → DBLayer(M10) → SQLite",
+    "key_rules": [
+      "M1不调M3——检测和渲染完全解耦",
+      "M5不调M8/M9——通过HTTP API而非直接import",
+      "M10是SQLite唯一访问入口——其他模块不直接操作数据库"
+    ]
+  },
+  "dependency_direction": {
+    "business_layer_can_use": ["detection_layer", "rendering_layer", "backend API"],
+    "rendering_layer_can_use": ["detection_layer (仅取landmarks数据)"],
+    "detection_layer_can_use": [],
+    "forbidden": [
+      "detection_layer → rendering_layer (检测不需要知道渲染存在)",
+      "detection_layer → business_layer",
+      "rendering_layer → business_layer",
+      "any_frontend_module → direct_sqlite_access"
+    ]
+  },
+  "created_by": "铁椅 v3.4",
+  "created_at": "2026-06-23T00:00:00Z"
+}
